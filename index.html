@@ -281,6 +281,124 @@
 const SUPABASE_URL      = "https://tofjkfemtynxeiklblby.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvZmprZmVtdHlueGVpa2xibGJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3NTQ5OTMsImV4cCI6MjEwNjMzMDk5M30.0ghMra28vMfyznSzOPQg67BygYJbsQk_X70VSmlzOSc";
 
+  /* =========================================================
+   🛡️ PROTECTIONS (dérrants, pas sécurité absolue)
+   ========================================================= */
+
+/* 1. Bloque le clic droit */
+document.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  return false;
+});
+
+/* 2. Bloque les raccourcis classiques */
+document.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+
+  // F12
+  if (e.key === "F12") {
+    e.preventDefault();
+    return false;
+  }
+
+  // Ctrl+Shift+I / J / C / K (DevTools)
+  if (e.ctrlKey && e.shiftKey && ["i", "j", "c", "k"].includes(k)) {
+    e.preventDefault();
+    return false;
+  }
+
+  // Ctrl+U (voir source)
+  if (e.ctrlKey && k === "u") {
+    e.preventDefault();
+    return false;
+  }
+
+  // Ctrl+S (enregistrer)
+  if (e.ctrlKey && k === "s") {
+    e.preventDefault();
+    return false;
+  }
+
+  // Ctrl+P (imprimer / PDF)
+  if (e.ctrlKey && k === "p") {
+    e.preventDefault();
+    return false;
+  }
+
+  // Ctrl+A (tout sélectionner)
+  if (e.ctrlKey && k === "a") {
+    e.preventDefault();
+    return false;
+  }
+
+  // Ctrl+C / Ctrl+X (copier / couper)
+  if (e.ctrlKey && (k === "c" || k === "x")) {
+    // Laisse passer si l'utilisateur copie depuis un input
+    const tag = document.activeElement?.tagName;
+    if (tag !== "INPUT" && tag !== "TEXTAREA") {
+      e.preventDefault();
+      return false;
+    }
+  }
+
+  // Ctrl+Shift+E / Ctrl+Shift+M (console Firefox)
+  if (e.ctrlKey && e.shiftKey && ["e", "m"].includes(k)) {
+    e.preventDefault();
+    return false;
+  }
+});
+
+/* 3. Empêche le drag & drop (glisser une image hors du canvas) */
+document.addEventListener("dragstart", (e) => e.preventDefault());
+
+/* 4. Empêche la sélection de texte */
+document.addEventListener("selectstart", (e) => {
+  const tag = document.activeElement?.tagName;
+  if (tag !== "INPUT" && tag !== "TEXTAREA") {
+    e.preventDefault();
+  }
+});
+
+/* 5. Empêche l'ouverture du menu "Enregistrer sous" via clic long (mobile) */
+document.addEventListener("longpress", (e) => e.preventDefault());
+
+/* 6. Avertissement console pour les curieux */
+console.clear();
+console.log(
+  "%c⛔ STOP !",
+  "color:#e74c3c;font-size:40px;font-weight:bold;text-shadow:2px 2px 0 #000;"
+);
+console.log(
+  "%cSi quelqu'un t'a dit de copier-coller quelque chose ici, c'est une ARNAQUE.\n" +
+  "Cette console permet d'exécuter du code dans ton navigateur.\n" +
+  "Ferme cet onglet si tu ne sais pas ce que tu fais.",
+  "color:#f39c12;font-size:14px;"
+);
+
+/* 7. Détection DevTools (basique) — redirige si ouvert */
+let devtoolsOpen = false;
+const threshold = 160;
+
+function detectDevTools() {
+  const widthDiff  = window.outerWidth  - window.innerWidth  > threshold;
+  const heightDiff = window.outerHeight - window.innerHeight > threshold;
+  const isOpen = widthDiff || heightDiff;
+
+  if (isOpen && !devtoolsOpen) {
+    devtoolsOpen = true;
+    document.body.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;' +
+      'min-height:100vh;background:#0d0f14;color:#ff8b7d;font-family:sans-serif;' +
+      'text-align:center;padding:40px;">' +
+      '<div>' +
+      '<h1 style="font-size:2rem;margin-bottom:12px;">⛔ Accès refusé</h1>' +
+      '<p style="color:#8b93a3;">Ferme les outils de développement pour continuer.</p>' +
+      '</div></div>';
+  }
+}
+
+setInterval(detectDevTools, 1000);
+
 /* =========================================================
    🎮 CONSTANTES DU JEU
    ========================================================= */
