@@ -125,7 +125,6 @@
   .swatch:hover { transform: scale(1.15); }
   .swatch.active { border-color: #fff; transform: scale(1.15); }
 
-  /* ---- Stock / progression ---- */
   .stock-box { flex: 1; min-width: 220px; }
   .stock-line {
     display: flex; justify-content: space-between; align-items: center;
@@ -135,7 +134,6 @@
     font-size: 0.95rem; font-weight: 700; color: var(--text);
   }
   .stock-line .big.low { color: #ff8b7d; }
-  .stock-line .big.charging { color: #fdcb6e; }
   .level-tag {
     background: linear-gradient(90deg, #6c5ce7, #00cec9);
     -webkit-background-clip: text; background-clip: text;
@@ -152,18 +150,45 @@
     border-radius: 999px;
     transition: width 0.15s linear;
   }
-  .bar-fill.low {
-    background: linear-gradient(90deg, #e74c3c, #f39c12);
-  }
+  .bar-fill.low { background: linear-gradient(90deg, #e74c3c, #f39c12); }
   .stock-hint {
     font-size: 0.72rem; color: var(--muted);
     margin-top: 6px; display: flex; justify-content: space-between;
   }
 
-  .info {
-    font-size: 0.8rem; color: var(--muted); text-align: center;
-  }
+  .info { font-size: 0.8rem; color: var(--muted); text-align: center; }
   .info b { color: var(--text); }
+
+  /* ---- Barre de reset ---- */
+  .reset-bar {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    background: rgba(231,76,60,0.08);
+    border: 1px solid rgba(231,76,60,0.35);
+    border-radius: 12px;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    color: #ff8b7d;
+    width: 100%;
+    max-width: 668px;
+  }
+  .reset-icon { font-size: 1.1rem; }
+  .reset-bar .bar {
+    flex: 1;
+    height: 6px;
+    background: #0f1219;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .reset-bar .bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #e74c3c, #f39c12);
+    border-radius: 999px;
+    transition: width 0.3s linear;
+  }
 
   .toast {
     position: fixed; bottom: 24px; left: 50%;
@@ -227,9 +252,7 @@
         <span class="big" id="stock-text">⚡ 3 / 3</span>
         <span class="level-tag" id="level-tag">Niveau 1</span>
       </div>
-      <div class="bar">
-        <div class="bar-fill" id="bar-fill"></div>
-      </div>
+      <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
       <div class="stock-hint">
         <span id="regen-hint">+1 pixel / 2s</span>
         <span id="total-hint">0 pixel posé</span>
@@ -238,7 +261,13 @@
   </div>
 
   <div class="info">
-    Grille <b id="grid-size"></b> · <b id="pixel-count">0</b> pixels sur la toile · Clique pour dessiner
+    Grille <b id="grid-size"></b> · <b id="pixel-count">0</b> pixels sur la toile · Clique ou <b>Espace</b> pour dessiner
+  </div>
+
+  <div class="reset-bar" id="reset-bar">
+    <span class="reset-icon">🌊</span>
+    <span id="reset-text">Reset en cours…</span>
+    <div class="bar"><div class="bar-fill" id="reset-fill"></div></div>
   </div>
 </section>
 
@@ -258,11 +287,10 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const GRID     = 64;
 const CELL     = 10;
 
-/* --- Système de stock / progression --- */
-const BASE_STOCK       = 3;     // stock au niveau 1
-const MAX_STOCK        = 20;    // plafond
-const STOCK_PER_LEVEL  = 5;     // 5 pixels posés = +1 stock max
-const REGEN_MS         = 2000;  // 1 pixel rechargé toutes les 2s
+const BASE_STOCK       = 3;
+const MAX_STOCK        = 20;
+const STOCK_PER_LEVEL  = 5;
+const REGEN_MS         = 2000;
 
 const COLORS = [
   "#ffffff","#c0c0c0","#808080","#404040","#000000",
@@ -304,7 +332,6 @@ const stockText   = document.getElementById("stock-text");
 const levelTag    = document.getElementById("level-tag");
 const regenHint   = document.getElementById("regen-hint");
 const totalHint   = document.getElementById("total-hint");
-const posTxt      = document.getElementById("pos-text");
 const pixelCount  = document.getElementById("pixel-count");
 const toastEl     = document.getElementById("toast");
 
@@ -318,17 +345,29 @@ let selectedColor = COLORS[5];
 let hover         = null;
 
 /* Stock */
-let totalPlaced  = 0;          // total à vie
+let totalPlaced  = 0;
 let maxStock     = BASE_STOCK;
 let stock        = BASE_STOCK;
 let lastRegenAt  = Date.now();
+
+/* Espace / placement continu */
+let spaceHeld   = false;
+let spaceTimer  = null;
+let placing     = false;
+
+/* Reset auto */
+let resetLoopTimer = null;
+let resetInfo      = { total: 0, pending: 0, capacity: 4096 };
+
+/* Timers globaux */
+let stockTimer = null;
 
 canvas.width  = GRID * CELL;
 canvas.height = GRID * CELL;
 document.getElementById("grid-size").textContent = `${GRID}×${GRID}`;
 
 /* =========================================================
-   📊 CALCULS DE PROGRESSION
+   📊 PROGRESSION
    ========================================================= */
 function computeMaxStock(total) {
   return Math.min(MAX_STOCK, BASE_STOCK + Math.floor(total / STOCK_PER_LEVEL));
@@ -375,15 +414,11 @@ function setPixel(x, y, color) {
 }
 
 /* =========================================================
-   ⚡ GESTION DU STOCK
+   ⚡ STOCK
    ========================================================= */
 function regenTick() {
   const now = Date.now();
-
-  if (stock >= maxStock) {
-    lastRegenAt = now;
-    return;
-  }
+  if (stock >= maxStock) { lastRegenAt = now; return; }
 
   const elapsed = now - lastRegenAt;
   const gained  = Math.floor(elapsed / REGEN_MS);
@@ -405,33 +440,26 @@ function consumeStock() {
 }
 
 function renderHud() {
-  /* Barre de remplissage */
   const pct = maxStock > 0 ? (stock / maxStock) * 100 : 0;
   barFill.style.width = pct + "%";
   barFill.classList.toggle("low", stock <= 1);
 
-  /* Texte principal */
-  stockText.classList.remove("low", "charging");
+  stockText.classList.remove("low");
   if (stock <= 0) {
     stockText.textContent = "🪫 0 / " + maxStock;
     stockText.classList.add("low");
-  } else if (stock < maxStock) {
-    stockText.textContent = "⚡ " + stock + " / " + maxStock;
   } else {
     stockText.textContent = "⚡ " + stock + " / " + maxStock;
   }
 
-  /* Niveau */
   levelTag.textContent = "Niveau " + computeLevel(totalPlaced);
 
-  /* Indices */
   regenHint.textContent = stock >= maxStock
     ? "Stock plein"
     : `+1 pixel / 2s · prochain +1 dans ${Math.ceil((REGEN_MS - (Date.now() - lastRegenAt)) / 100) / 10}s`;
 
   totalHint.textContent = totalPlaced + " pixel" + (totalPlaced > 1 ? "s" : "") + " posé" + (totalPlaced > 1 ? "s" : "");
 
-  /* Curseur */
   canvas.style.cursor = stock > 0 ? "crosshair" : "not-allowed";
 }
 
@@ -451,13 +479,10 @@ authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   clearMsg();
   loginBtn.disabled = signupBtn.disabled = true;
-
   const email    = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
-
   const { error } = await db.auth.signInWithPassword({ email, password });
   if (error) showMsg("❌ " + traduireErreur(error.message));
-
   loginBtn.disabled = signupBtn.disabled = false;
 });
 
@@ -465,18 +490,14 @@ signupBtn.addEventListener("click", async () => {
   clearMsg();
   const email    = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
-
   if (!email || password.length < 6) {
     showMsg("Renseigne un email valide et un mot de passe de 6 caractères minimum.");
     return;
   }
-
   loginBtn.disabled = signupBtn.disabled = true;
   const { data, error } = await db.auth.signUp({ email, password });
   loginBtn.disabled = signupBtn.disabled = false;
-
   if (error) { showMsg("❌ " + traduireErreur(error.message)); return; }
-
   if (data.user && !data.session) {
     showMsg("✅ Compte créé ! Vérifie ta boîte mail pour confirmer ton adresse.", "ok");
   } else {
@@ -525,11 +546,11 @@ async function enterGame(user) {
 
   buildPalette();
 
-  /* Charge le profil (total placé) + les pixels + le temps réel */
   await loadProfile(user);
   await loadPixels();
   subscribeRealtime();
   startStockLoop();
+  startResetLoop();
 
   renderHud();
   drawAll();
@@ -540,12 +561,19 @@ function leaveGame() {
   gameScreen.style.display = "none";
   userBox.style.display    = "none";
 
-  if (channel) { db.removeChannel(channel); channel = null; }
-  if (stockTimer) { clearInterval(stockTimer); stockTimer = null; }
+  if (channel)         { db.removeChannel(channel); channel = null; }
+  if (stockTimer)      { clearInterval(stockTimer);      stockTimer = null; }
+  if (resetLoopTimer)  { clearInterval(resetLoopTimer);  resetLoopTimer = null; }
+  if (spaceTimer)      { clearInterval(spaceTimer);      spaceTimer = null; }
+
+  spaceHeld = false;
+  placing   = false;
 
   pixelMap.clear();
   hover = null;
   drawAll();
+
+  document.getElementById("reset-bar").style.display = "none";
 
   authForm.reset();
   clearMsg();
@@ -553,7 +581,7 @@ function leaveGame() {
 }
 
 /* =========================================================
-   👤 PROFIL (compteur à vie)
+   👤 PROFIL
    ========================================================= */
 async function loadProfile(user) {
   let { data, error } = await db
@@ -563,7 +591,6 @@ async function loadProfile(user) {
     .maybeSingle();
 
   if (error || !data) {
-    /* Fallback : créer le profil s'il n'existe pas */
     const ins = await db
       .from("profiles")
       .insert({ id: user.id, email: user.email, total_placed: 0 })
@@ -579,7 +606,7 @@ async function loadProfile(user) {
 }
 
 /* =========================================================
-   📥 CHARGEMENT DES PIXELS
+   📥 CHARGEMENT
    ========================================================= */
 async function loadPixels() {
   pixelMap.clear();
@@ -597,21 +624,33 @@ async function loadPixels() {
     if (data.length < STEP) break;
     from += STEP;
   }
-
   drawAll();
 }
 
 /* =========================================================
-   📡 TEMPS RÉEL
+   📡 TEMPS RÉEL (INSERT/UPDATE + DELETE)
    ========================================================= */
 function subscribeRealtime() {
   if (channel) db.removeChannel(channel);
+
   channel = db
     .channel("public:pixels")
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "pixels" },
       (payload) => {
+        /* DELETE : pixel supprimé par le reset */
+        if (payload.eventType === "DELETE") {
+          const old = payload.old;
+          if (old && old.x != null && old.y != null) {
+            pixelMap.delete(`${old.x},${old.y}`);
+            pixelCount.textContent = pixelMap.size;
+            drawAll();
+          }
+          return;
+        }
+
+        /* INSERT / UPDATE */
         const p = payload.new;
         if (!p || p.x == null) return;
         setPixel(p.x, p.y, p.color);
@@ -683,68 +722,161 @@ canvas.addEventListener("touchstart", async (e) => {
 }, { passive: true });
 
 /* =========================================================
+   ⌨️ ESPACE = POSER / MAINTENIR = PEINDRE EN CONTINU
+   ========================================================= */
+function isTypingTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+}
+
+function spacePlace() {
+  if (!hover) return;
+  if (stock < 1) return;
+  const key = `${hover.x},${hover.y}`;
+  if (pixelMap.get(key) === selectedColor) return;
+  placePixel(hover.x, hover.y);
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space") return;
+  if (isTypingTarget(e.target)) return;
+  e.preventDefault();
+  if (spaceHeld) return;
+  spaceHeld = true;
+  spacePlace();
+  spaceTimer = setInterval(spacePlace, 250);
+});
+
+document.addEventListener("keyup", (e) => {
+  if (e.code !== "Space") return;
+  if (isTypingTarget(e.target)) return;
+  e.preventDefault();
+  spaceHeld = false;
+  if (spaceTimer) { clearInterval(spaceTimer); spaceTimer = null; }
+});
+
+window.addEventListener("blur", () => {
+  spaceHeld = false;
+  if (spaceTimer) { clearInterval(spaceTimer); spaceTimer = null; }
+});
+
+/* =========================================================
    ✏️ POSER UN PIXEL
    ========================================================= */
 async function placePixel(x, y) {
   if (!currentUser) return;
+  if (placing) return;
 
-  regenTick(); // mise à jour du stock avant check
+  const key = `${x},${y}`;
+  if (pixelMap.get(key) === selectedColor) return;
+
+  regenTick();
 
   if (stock < 1) {
     showToast("🪫 Plus de pixels en stock, attends la recharge…", "warn");
     return;
   }
 
-  /* Consomme 1 stock immédiatement (UI réactive) */
+  placing = true;
   consumeStock();
 
-  /* Optimistic UI */
   setPixel(x, y, selectedColor);
   drawAll();
 
-  /* Appel RPC : pose le pixel + incrémente le compteur */
-  const { data, error } = await db.rpc("place_pixel", {
-    px: x, py: y, pcolor: selectedColor
-  });
+  try {
+    const { data, error } = await db.rpc("place_pixel", {
+      px: x, py: y, pcolor: selectedColor
+    });
 
-  if (error) {
-    console.error("Erreur place_pixel :", error);
-    /* Rollback visuel minimal : on rechargera depuis la DB */
-    showToast("❌ Impossible de poser le pixel", "warn");
-    await loadPixels();
-    /* On rend le stock consommé pour ne pas pénaliser */
-    stock = Math.min(maxStock, stock + 1);
-    renderHud();
-    return;
-  }
-
-  /* Progression : mise à jour du total à vie */
-  if (typeof data === "number" && data >= 0) {
-    const oldMax = maxStock;
-    totalPlaced = data;
-    maxStock = computeMaxStock(totalPlaced);
-
-    if (maxStock > oldMax) {
-      /* Level up : on offre 1 pixel bonus */
+    if (error) {
+      console.error("❌ place_pixel :", error);
+      showToast("❌ Impossible de poser le pixel", "warn");
+      await loadPixels();
       stock = Math.min(maxStock, stock + 1);
-      showToast(`🎉 Niveau ${computeLevel(totalPlaced)} ! Stock max ${maxStock}`, "good");
+      renderHud();
+      return;
     }
-    renderHud();
+
+    if (typeof data === "number" && data >= 0) {
+      const oldMax = maxStock;
+      totalPlaced = data;
+      maxStock = computeMaxStock(totalPlaced);
+
+      if (maxStock > oldMax) {
+        stock = Math.min(maxStock, stock + 1);
+        showToast(`🎉 Niveau ${computeLevel(totalPlaced)} ! Stock max ${maxStock}`, "good");
+      }
+      renderHud();
+    }
+  } finally {
+    placing = false;
   }
 }
 
 /* =========================================================
    ⏱️ BOUCLE DE RECHARGE
    ========================================================= */
-let stockTimer = null;
 function startStockLoop() {
   if (stockTimer) clearInterval(stockTimer);
   stockTimer = setInterval(() => {
     regenTick();
-    /* Rafraîchit le compteur "prochain +1 dans Xs" */
     if (stock < maxStock) renderHud();
   }, 200);
 }
+
+/* =========================================================
+   🌊 BOUCLE DE RESET AUTOMATIQUE
+   ========================================================= */
+function updateResetUI(status) {
+  resetInfo = status || resetInfo;
+  const bar  = document.getElementById("reset-bar");
+  const fill = document.getElementById("reset-fill");
+  const txt  = document.getElementById("reset-text");
+
+  if (!resetInfo.pending || resetInfo.pending === 0) {
+    bar.style.display = "none";
+    return;
+  }
+
+  bar.style.display = "flex";
+  const done = resetInfo.capacity - resetInfo.pending;
+  const pct  = (done / resetInfo.capacity) * 100;
+  fill.style.width = pct + "%";
+  txt.textContent  = `Reset en cours — ${done} / ${resetInfo.capacity} pixels disparus`;
+}
+
+function startResetLoop() {
+  if (resetLoopTimer) clearInterval(resetLoopTimer);
+
+  resetLoopTimer = setInterval(async () => {
+    try {
+      /* 1. Si la map est pleine, démarre le reset (idempotent) */
+      if (pixelMap.size >= GRID * GRID) {
+        const { data } = await db.rpc("start_board_reset");
+        if (data === true) {
+          showToast("🌊 La map est pleine ! Reset sur 24h lancé…", "warn");
+        }
+      }
+
+      /* 2. Purge les pixels expirés */
+      await db.rpc("cleanup_expired_pixels");
+
+      /* 3. Rafraîchit l'indicateur UI */
+      const { data: status } = await db.rpc("reset_status");
+      if (status) updateResetUI(status);
+
+    } catch (e) {
+      console.warn("Reset loop :", e);
+    }
+  }, 5000);
+}
+
+window.addEventListener("beforeunload", () => {
+  if (resetLoopTimer) clearInterval(resetLoopTimer);
+  if (stockTimer)     clearInterval(stockTimer);
+  if (spaceTimer)     clearInterval(spaceTimer);
+});
 
 /* =========================================================
    💬 TOAST
