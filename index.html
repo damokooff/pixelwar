@@ -288,9 +288,9 @@ const GRID     = 64;
 const CELL     = 10;
 
 const BASE_STOCK       = 3;
-const MAX_STOCK        = 20;
+const MAX_STOCK        = 999;
 const STOCK_PER_LEVEL  = 5;
-const REGEN_MS         = 2000;
+const REGEN_MS         = 1000;
 
 const COLORS = [
   "#ffffff","#c0c0c0","#808080","#404040","#000000",
@@ -869,7 +869,7 @@ function startResetLoop() {
     } catch (e) {
       console.warn("Reset loop :", e);
     }
-  }, 5000);
+  }, 900);
 }
 
 window.addEventListener("beforeunload", () => {
