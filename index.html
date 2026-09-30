@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel War</title>
+<title>Pixel War × Supabase</title>
 <style>
   :root {
     --bg: #0d0f14;
@@ -110,10 +110,10 @@
     touch-action: manipulation;
   }
   .hud {
-    display: flex; align-items: center; gap: 18px;
+    display: flex; align-items: center; gap: 24px;
     flex-wrap: wrap; justify-content: center;
     background: var(--panel); border: 1px solid var(--border);
-    border-radius: 14px; padding: 14px 20px;
+    border-radius: 14px; padding: 16px 22px;
     width: 100%; max-width: 668px;
   }
   .palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
@@ -124,25 +124,64 @@
   }
   .swatch:hover { transform: scale(1.15); }
   .swatch.active { border-color: #fff; transform: scale(1.15); }
-  .cooldown { flex: 1; min-width: 160px; }
-  .cooldown-label {
-    font-size: 0.78rem; color: var(--muted);
-    margin-bottom: 6px; display: flex; justify-content: space-between;
+
+  /* ---- Stock / progression ---- */
+  .stock-box { flex: 1; min-width: 220px; }
+  .stock-line {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.8rem; color: var(--muted); margin-bottom: 6px;
+  }
+  .stock-line .big {
+    font-size: 0.95rem; font-weight: 700; color: var(--text);
+  }
+  .stock-line .big.low { color: #ff8b7d; }
+  .stock-line .big.charging { color: #fdcb6e; }
+  .level-tag {
+    background: linear-gradient(90deg, #6c5ce7, #00cec9);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; font-weight: 700;
   }
   .bar {
-    height: 8px; background: #0f1219; border-radius: 999px;
+    height: 10px; background: #0f1219; border-radius: 999px;
     overflow: hidden; border: 1px solid var(--border);
+    position: relative;
   }
   .bar-fill {
     height: 100%; width: 100%;
     background: linear-gradient(90deg, #6c5ce7, #00cec9);
-    border-radius: 999px; transition: width 0.1s linear;
+    border-radius: 999px;
+    transition: width 0.15s linear;
   }
-  .info { font-size: 0.8rem; color: var(--muted); text-align: center; }
+  .bar-fill.low {
+    background: linear-gradient(90deg, #e74c3c, #f39c12);
+  }
+  .stock-hint {
+    font-size: 0.72rem; color: var(--muted);
+    margin-top: 6px; display: flex; justify-content: space-between;
+  }
+
+  .info {
+    font-size: 0.8rem; color: var(--muted); text-align: center;
+  }
   .info b { color: var(--text); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(120px);
+    background: #1a1f2e; border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 20px;
+    font-size: 0.88rem; color: var(--text);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 100; pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.good { border-color: rgba(46,204,113,0.5); }
+  .toast.warn { border-color: rgba(243,156,18,0.5); }
+
   @media (max-width: 620px) {
     h1 { font-size: 1.25rem; }
-    .hud { padding: 12px; gap: 12px; }
+    .hud { padding: 12px; gap: 14px; }
     .swatch { width: 22px; height: 22px; }
   }
 </style>
@@ -179,20 +218,31 @@
 
 <section id="game-screen">
   <div class="board-wrap"><canvas id="canvas"></canvas></div>
+
   <div class="hud">
     <div class="palette" id="palette"></div>
-    <div class="cooldown">
-      <div class="cooldown-label">
-        <span id="cooldown-text">Prêt à peindre</span>
-        <span id="pos-text">—</span>
+
+    <div class="stock-box">
+      <div class="stock-line">
+        <span class="big" id="stock-text">⚡ 3 / 3</span>
+        <span class="level-tag" id="level-tag">Niveau 1</span>
       </div>
-      <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
+      <div class="bar">
+        <div class="bar-fill" id="bar-fill"></div>
+      </div>
+      <div class="stock-hint">
+        <span id="regen-hint">+1 pixel / 2s</span>
+        <span id="total-hint">0 pixel posé</span>
+      </div>
     </div>
   </div>
+
   <div class="info">
-    Grille <b id="grid-size"></b> · <b id="pixel-count">0</b> pixels posés · Clique pour dessiner
+    Grille <b id="grid-size"></b> · <b id="pixel-count">0</b> pixels sur la toile · Clique pour dessiner
   </div>
 </section>
+
+<div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -203,11 +253,16 @@ const SUPABASE_URL      = "https://tofjkfemtynxeiklblby.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvZmprZmVtdHlueGVpa2xibGJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3NTQ5OTMsImV4cCI6MjEwNjMzMDk5M30.0ghMra28vMfyznSzOPQg67BygYJbsQk_X70VSmlzOSc";
 
 /* =========================================================
-   🎮 CONSTANTES
+   🎮 CONSTANTES DU JEU
    ========================================================= */
 const GRID     = 64;
 const CELL     = 10;
-const COOLDOWN = 5000;
+
+/* --- Système de stock / progression --- */
+const BASE_STOCK       = 3;     // stock au niveau 1
+const MAX_STOCK        = 20;    // plafond
+const STOCK_PER_LEVEL  = 5;     // 5 pixels posés = +1 stock max
+const REGEN_MS         = 2000;  // 1 pixel rechargé toutes les 2s
 
 const COLORS = [
   "#ffffff","#c0c0c0","#808080","#404040","#000000",
@@ -245,9 +300,13 @@ const canvas      = document.getElementById("canvas");
 const ctx         = canvas.getContext("2d");
 const paletteEl   = document.getElementById("palette");
 const barFill     = document.getElementById("bar-fill");
-const cooldownTxt = document.getElementById("cooldown-text");
+const stockText   = document.getElementById("stock-text");
+const levelTag    = document.getElementById("level-tag");
+const regenHint   = document.getElementById("regen-hint");
+const totalHint   = document.getElementById("total-hint");
 const posTxt      = document.getElementById("pos-text");
 const pixelCount  = document.getElementById("pixel-count");
+const toastEl     = document.getElementById("toast");
 
 /* =========================================================
    💾 ÉTAT
@@ -257,12 +316,26 @@ let pixelMap      = new Map();
 let channel       = null;
 let selectedColor = COLORS[5];
 let hover         = null;
-let cooldownEnd   = 0;
-let cooldownTimer = null;
+
+/* Stock */
+let totalPlaced  = 0;          // total à vie
+let maxStock     = BASE_STOCK;
+let stock        = BASE_STOCK;
+let lastRegenAt  = Date.now();
 
 canvas.width  = GRID * CELL;
 canvas.height = GRID * CELL;
 document.getElementById("grid-size").textContent = `${GRID}×${GRID}`;
+
+/* =========================================================
+   📊 CALCULS DE PROGRESSION
+   ========================================================= */
+function computeMaxStock(total) {
+  return Math.min(MAX_STOCK, BASE_STOCK + Math.floor(total / STOCK_PER_LEVEL));
+}
+function computeLevel(total) {
+  return Math.floor(total / STOCK_PER_LEVEL) + 1;
+}
 
 /* =========================================================
    🖌️ RENDU
@@ -302,6 +375,67 @@ function setPixel(x, y, color) {
 }
 
 /* =========================================================
+   ⚡ GESTION DU STOCK
+   ========================================================= */
+function regenTick() {
+  const now = Date.now();
+
+  if (stock >= maxStock) {
+    lastRegenAt = now;
+    return;
+  }
+
+  const elapsed = now - lastRegenAt;
+  const gained  = Math.floor(elapsed / REGEN_MS);
+
+  if (gained > 0) {
+    stock = Math.min(maxStock, stock + gained);
+    lastRegenAt += gained * REGEN_MS;
+    renderHud();
+  }
+}
+
+function consumeStock() {
+  if (stock < 1) return false;
+  const wasFull = stock >= maxStock;
+  stock -= 1;
+  if (wasFull) lastRegenAt = Date.now();
+  renderHud();
+  return true;
+}
+
+function renderHud() {
+  /* Barre de remplissage */
+  const pct = maxStock > 0 ? (stock / maxStock) * 100 : 0;
+  barFill.style.width = pct + "%";
+  barFill.classList.toggle("low", stock <= 1);
+
+  /* Texte principal */
+  stockText.classList.remove("low", "charging");
+  if (stock <= 0) {
+    stockText.textContent = "🪫 0 / " + maxStock;
+    stockText.classList.add("low");
+  } else if (stock < maxStock) {
+    stockText.textContent = "⚡ " + stock + " / " + maxStock;
+  } else {
+    stockText.textContent = "⚡ " + stock + " / " + maxStock;
+  }
+
+  /* Niveau */
+  levelTag.textContent = "Niveau " + computeLevel(totalPlaced);
+
+  /* Indices */
+  regenHint.textContent = stock >= maxStock
+    ? "Stock plein"
+    : `+1 pixel / 2s · prochain +1 dans ${Math.ceil((REGEN_MS - (Date.now() - lastRegenAt)) / 100) / 10}s`;
+
+  totalHint.textContent = totalPlaced + " pixel" + (totalPlaced > 1 ? "s" : "") + " posé" + (totalPlaced > 1 ? "s" : "");
+
+  /* Curseur */
+  canvas.style.cursor = stock > 0 ? "crosshair" : "not-allowed";
+}
+
+/* =========================================================
    🔐 AUTH
    ========================================================= */
 function showMsg(text, type = "error") {
@@ -317,10 +451,13 @@ authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   clearMsg();
   loginBtn.disabled = signupBtn.disabled = true;
+
   const email    = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
+
   const { error } = await db.auth.signInWithPassword({ email, password });
   if (error) showMsg("❌ " + traduireErreur(error.message));
+
   loginBtn.disabled = signupBtn.disabled = false;
 });
 
@@ -328,14 +465,18 @@ signupBtn.addEventListener("click", async () => {
   clearMsg();
   const email    = document.getElementById("email").value.trim();
   const password = document.getElementById("password").value;
+
   if (!email || password.length < 6) {
     showMsg("Renseigne un email valide et un mot de passe de 6 caractères minimum.");
     return;
   }
+
   loginBtn.disabled = signupBtn.disabled = true;
   const { data, error } = await db.auth.signUp({ email, password });
   loginBtn.disabled = signupBtn.disabled = false;
+
   if (error) { showMsg("❌ " + traduireErreur(error.message)); return; }
+
   if (data.user && !data.session) {
     showMsg("✅ Compte créé ! Vérifie ta boîte mail pour confirmer ton adresse.", "ok");
   } else {
@@ -376,29 +517,65 @@ db.auth.onAuthStateChange((_event, session) => {
   }
 })();
 
-function enterGame(user) {
+async function enterGame(user) {
   authScreen.style.display = "none";
   gameScreen.style.display = "flex";
   userBox.style.display    = "flex";
   userEmail.textContent    = user.email;
+
   buildPalette();
-  loadPixels();
+
+  /* Charge le profil (total placé) + les pixels + le temps réel */
+  await loadProfile(user);
+  await loadPixels();
   subscribeRealtime();
-  startCooldownLoop();
+  startStockLoop();
+
+  renderHud();
+  drawAll();
 }
 
 function leaveGame() {
   authScreen.style.display = "block";
   gameScreen.style.display = "none";
   userBox.style.display    = "none";
+
   if (channel) { db.removeChannel(channel); channel = null; }
-  if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+  if (stockTimer) { clearInterval(stockTimer); stockTimer = null; }
+
   pixelMap.clear();
   hover = null;
   drawAll();
+
   authForm.reset();
   clearMsg();
   loginBtn.disabled = signupBtn.disabled = false;
+}
+
+/* =========================================================
+   👤 PROFIL (compteur à vie)
+   ========================================================= */
+async function loadProfile(user) {
+  let { data, error } = await db
+    .from("profiles")
+    .select("total_placed")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error || !data) {
+    /* Fallback : créer le profil s'il n'existe pas */
+    const ins = await db
+      .from("profiles")
+      .insert({ id: user.id, email: user.email, total_placed: 0 })
+      .select("total_placed")
+      .maybeSingle();
+    data = ins.data || { total_placed: 0 };
+  }
+
+  totalPlaced = data.total_placed || 0;
+  maxStock    = computeMaxStock(totalPlaced);
+  stock       = maxStock;
+  lastRegenAt = Date.now();
 }
 
 /* =========================================================
@@ -408,22 +585,20 @@ async function loadPixels() {
   pixelMap.clear();
   const STEP = 1000;
   let from = 0;
+
   while (true) {
     const { data, error } = await db
       .from("pixels")
       .select("x,y,color")
       .range(from, from + STEP - 1);
 
-    if (error) {
-      console.error("Erreur chargement :", error);
-      break;
-    }
+    if (error) { console.error("Erreur chargement :", error); break; }
     for (const p of data) setPixel(p.x, p.y, p.color);
     if (data.length < STEP) break;
     from += STEP;
   }
+
   drawAll();
-  pixelCount.textContent = pixelMap.size;
 }
 
 /* =========================================================
@@ -443,11 +618,7 @@ function subscribeRealtime() {
         drawAll();
       }
     )
-    .subscribe((status) => {
-      if (status === "CHANNEL_ERROR") {
-        console.warn("Realtime indisponible — vérifie la publication supabase_realtime.");
-      }
-    });
+    .subscribe();
 }
 
 /* =========================================================
@@ -486,13 +657,11 @@ canvas.addEventListener("mousemove", (e) => {
   const c = canvasCoords(e);
   const changed = (!!c !== !!hover) || (c && hover && (c.x !== hover.x || c.y !== hover.y));
   hover = c;
-  posTxt.textContent = c ? `${c.x}, ${c.y}` : "—";
   if (changed) drawAll();
 });
 
 canvas.addEventListener("mouseleave", () => {
   hover = null;
-  posTxt.textContent = "—";
   drawAll();
 });
 
@@ -502,7 +671,6 @@ canvas.addEventListener("click", async (e) => {
   await placePixel(c.x, c.y);
 });
 
-/* Support tactile */
 canvas.addEventListener("touchstart", async (e) => {
   const touch = e.touches[0];
   const rect = canvas.getBoundingClientRect();
@@ -519,51 +687,77 @@ canvas.addEventListener("touchstart", async (e) => {
    ========================================================= */
 async function placePixel(x, y) {
   if (!currentUser) return;
-  const now = Date.now();
-  if (now < cooldownEnd) return;
 
-  // Optimistic UI
+  regenTick(); // mise à jour du stock avant check
+
+  if (stock < 1) {
+    showToast("🪫 Plus de pixels en stock, attends la recharge…", "warn");
+    return;
+  }
+
+  /* Consomme 1 stock immédiatement (UI réactive) */
+  consumeStock();
+
+  /* Optimistic UI */
   setPixel(x, y, selectedColor);
   drawAll();
-  cooldownEnd = now + COOLDOWN;
 
-  const { error } = await db.from("pixels").upsert(
-    {
-      x,
-      y,
-      color: selectedColor,
-      user_id: currentUser.id,
-      updated_at: new Date().toISOString()
-    },
-    { onConflict: "x,y" }
-  );
+  /* Appel RPC : pose le pixel + incrémente le compteur */
+  const { data, error } = await db.rpc("place_pixel", {
+    px: x, py: y, pcolor: selectedColor
+  });
 
   if (error) {
-    console.error("Erreur upsert :", error);
-    cooldownEnd = 0;
+    console.error("Erreur place_pixel :", error);
+    /* Rollback visuel minimal : on rechargera depuis la DB */
+    showToast("❌ Impossible de poser le pixel", "warn");
     await loadPixels();
+    /* On rend le stock consommé pour ne pas pénaliser */
+    stock = Math.min(maxStock, stock + 1);
+    renderHud();
+    return;
+  }
+
+  /* Progression : mise à jour du total à vie */
+  if (typeof data === "number" && data >= 0) {
+    const oldMax = maxStock;
+    totalPlaced = data;
+    maxStock = computeMaxStock(totalPlaced);
+
+    if (maxStock > oldMax) {
+      /* Level up : on offre 1 pixel bonus */
+      stock = Math.min(maxStock, stock + 1);
+      showToast(`🎉 Niveau ${computeLevel(totalPlaced)} ! Stock max ${maxStock}`, "good");
+    }
+    renderHud();
   }
 }
 
 /* =========================================================
-   ⏱️ COOLDOWN
+   ⏱️ BOUCLE DE RECHARGE
    ========================================================= */
-function startCooldownLoop() {
-  if (cooldownTimer) clearInterval(cooldownTimer);
-  cooldownTimer = setInterval(() => {
-    const remaining = Math.max(0, cooldownEnd - Date.now());
-    const pct = remaining > 0 ? (remaining / COOLDOWN) * 100 : 100;
-    barFill.style.width = (100 - pct) + "%";
-    if (remaining > 0) {
-      cooldownTxt.textContent = `⏳ ${(remaining / 1000).toFixed(1)}s`;
-      canvas.style.cursor = "not-allowed";
-    } else {
-      cooldownTxt.textContent = "✅ Prêt à peindre";
-      canvas.style.cursor = "crosshair";
-    }
-  }, 80);
+let stockTimer = null;
+function startStockLoop() {
+  if (stockTimer) clearInterval(stockTimer);
+  stockTimer = setInterval(() => {
+    regenTick();
+    /* Rafraîchit le compteur "prochain +1 dans Xs" */
+    if (stock < maxStock) renderHud();
+  }, 200);
 }
 
+/* =========================================================
+   💬 TOAST
+   ========================================================= */
+let toastTimer;
+function showToast(msg, type = "") {
+  toastEl.textContent = msg;
+  toastEl.className = "toast show " + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2400);
+}
+
+/* Premier rendu */
 drawAll();
 </script>
 </body>
