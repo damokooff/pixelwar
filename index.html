@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel War — Supabase</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --panel: #161a22;
+    --border: #262c38;
+    --text: #e6e8eb;
+    --muted: #8b93a3;
+    --accent: #6c5ce7;
+    --accent-hover: #7d6ef0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #1a1f2e 0%, var(--bg) 60%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 60px;
+  }
+  header {
+    width: 100%;
+    max-width: 900px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #6c5ce7, #00cec9, #fd79a8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  h1 span { font-size: 1.3rem; }
+  .user-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .badge {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    color: var(--text);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button {
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: var(--accent);
+    color: #fff;
+  }
+  button:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  button.ghost:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+
+  #auth-screen {
+    width: 100%;
+    max-width: 400px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 32px 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  #auth-screen h2 { font-size: 1.25rem; margin-bottom: 6px; }
+  #auth-screen p.sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 22px; }
+  .field { margin-bottom: 14px; }
+  label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  input[type="email"], input[type="password"] {
+    width: 100%;
+    padding: 12px 14px;
+    background: #0f1219;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus { border-color: var(--accent); }
+  .auth-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .auth-actions button { flex: 1; }
+  .msg {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    padding: 10px 14px;
+    border-radius: 10px;
+    display: none;
+  }
+  .msg.error { display: block; background: rgba(231,76,60,0.12); color: #ff8b7d; border: 1px solid rgba(231,76,60,0.3); }
+  .msg.ok    { display: block; background: rgba(46,204,113,0.12); color: #6ee7a8; border: 1px solid rgba(46,204,113,0.3); }
+
+  #game-screen {
+    display: none;
+    width: 100%;
+    max-width: 900px;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  .board-wrap {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    max-width: 100%;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    max-width: 640px;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    cursor: crosshair;
+    image-rendering: pixelated;
+    touch-action: manipulation;
+  }
+  .hud {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 20px;
+    width: 100%;
+    max-width: 668px;
+  }
+  .palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.1s, border-color 0.1s;
+  }
+  .swatch:hover { transform: scale(1.15); }
+  .swatch.active { border-color: #fff; transform: scale(1.15); }
+  .cooldown { flex: 1; min-width: 160px; }
+  .cooldown-label {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .bar {
+    height: 8px;
+    background: #0f1219;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .bar-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #6c5ce7, #00cec9);
+    border-radius: 999px;
+    transition: width 0.1s linear;
+  }
+  .info { font-size: 0.8rem; color: var(--muted); text-align: center; }
+  .info b { color: var(--text); }
+  @media (max-width: 620px) {
+    h1 { font-size: 1.25rem; }
+    .hud { padding: 12px; gap: 12px; }
+    .swatch { width: 22px; height: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎨 Pixel War <span>× Supabase</span></h1>
+  <div class="user-box" id="user-box" style="display:none">
+    <span class="badge" id="user-email"></span>
+    <button class="ghost" id="logout-btn">Déconnexion</button>
+  </div>
+</header>
+
+<section id="auth-screen">
+  <h2>Connexion</h2>
+  <p class="sub">Connecte-toi pour poser ton premier pixel.</p>
+  <form id="auth-form">
+    <div class="field">
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="toi@exemple.com" required>
+    </div>
+    <div class="field">
+      <label for="password">Mot de passe</label>
+      <input type="password" id="password" placeholder="••••••••" minlength="6" required>
+    </div>
+    <div class="auth-actions">
+      <button type="submit" id="login-btn">Se connecter</button>
+      <button type="button" class="ghost" id="signup-btn">Créer un compte</button>
+    </div>
+  </form>
+  <div class="msg" id="auth-msg"></div>
+</section>
+
+<section id="game-screen">
+  <div class="board-wrap"><canvas id="canvas"></canvas></div>
+  <div class="hud">
+    <div class="palette" id="palette"></div>
+    <div class="cooldown">
+      <div class="cooldown-label">
+        <span id="cooldown-text">Prêt à peindre</span>
+        <span id="pos-text">—</span>
+      </div>
+      <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
+    </div>
+  </div>
+  <div class="info">
+    Grille <b id="grid-size"></b> · <b id="pixel-count">0</b> pixels posés · Clique pour dessiner
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ========== CONFIG — REMPLACE CES 2 LIGNES ========== */
+const SUPABASE_URL      = "https://xxxxx.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOi...";
+
+/* ========== CONSTANTES ========== */
+const GRID      = 64;
+const CELL      = 10;
+const COOLDOWN  = 5000;
+const COLORS = [
+  "#ffffff","#c0c0c0","#808080","#404040","#000000",
+  "#e74c3c","#ff7675","#e17055","#fdcb6e","#ffeaa7",
+  "#00b894","#55efc4","#00cec9","#74b9ff","#0984e3",
+  "#6c5ce7","#a29bfe","#fd79a8","#e84393","#b2bec3",
+  "#8e44ad","#2d3436","#d63031","#f39c12"
+];
+
+if (SUPABASE_URL.includes("xxxxx")) {
+  document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:sans-serif;color:#e6e8eb">' +
+    '<h2>⚠️ Configure tes clés Supabase dans le fichier</h2></div>';
+  throw new Error("Config manquante");
+}
+
+const { createClient } = window.supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ========== DOM ========== */
+const authScreen  = document.getElementById("auth-screen");
+const gameScreen  = document.getElementById("game-screen");
+const userBox     = document.getElementById("user-box");
+const userEmail   = document.getElementById("user-email");
+const authForm    = document.getElementById("auth-form");
+const authMsg     = document.getElementById("auth-msg");
+const loginBtn    = document.getElementById("login-btn");
+const signupBtn   = document.getElementById("signup-btn");
+const logoutBtn   = document.getElementById("logout-btn");
+const canvas      = document.getElementById("canvas");
+const ctx         = canvas.getContext("2d");
+const paletteEl   = document.getElementById("palette");
+const barFill     = document.getElementById("bar-fill");
+const cooldownTxt = document.getElementById("cooldown-text");
+const posTxt      = document.getElementById("pos-text");
+const pixelCount  = document.getElementById("pixel-count");
+
+/* ========== ÉTAT ========== */
+let currentUser   = null;
+let pixelMap      = new Map();
+let channel       = null;
+let selectedColor = COLORS[5];
+let hover         = null;
+let cooldownEnd   = 0;
+let cooldownTimer = null;
+
+canvas.width  = GRID * CELL;
+canvas.height = GRID * CELL;
+document.getElementById("grid-size").textContent = `${GRID}×${GRID}`;
+
+/* ========== RENDU ========== */
+function drawAll() {
+  ctx.fillStyle = "#0f1219";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (const [key, color] of pixelMap) {
+    const i = key.indexOf(",");
+    const x = +key.slice(0, i);
+    const y = +key.slice(i + 1);
+    ctx.fillStyle = color;
+    ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.055)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= GRID; i++) {
+    const p = i * CELL + 0.5;
+    ctx.moveTo(p, 0); ctx.lineTo(p, canvas.height);
+    ctx.moveTo(0, p); ctx.lineTo(canvas.width, p);
+  }
+  ctx.stroke();
+
+  if (hover) {
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(hover.x * CELL + 1, hover.y * CELL + 1, CELL - 2, CELL - 2);
+  }
+}
+
+function setPixel(x, y, color) {
+  pixelMap.set(`${x},${y}`, color);
+  pixelCount.textContent = pixelMap.size;
+}
+
+/* ========== AUTH ========== */
+function showMsg(text, type = "error") {
+  authMsg.textContent = text;
+  authMsg.className = "msg " + type;
+}
+function clearMsg() { authMsg.className = "msg"; authMsg.textContent = ""; }
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearMsg();
+  loginBtn.disabled = signupBtn.disabled = true;
+  const email    = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if (error) showMsg("❌ " + traduireErreur(error.message));
+  loginBtn.disabled = signupBtn.disabled = false;
+});
+
+signupBtn.addEventListener("click", async () => {
+  clearMsg();
+  const email    = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  if (!email || password.length < 6) {
+    showMsg("Renseigne un email valide et un mot de passe de 6 caractères minimum.");
+    return;
+  }
+  loginBtn.disabled = signupBtn.disabled = true;
+  const { data, error } = await db.auth.signUp({ email, password });
+  loginBtn.disabled = signupBtn.disabled = false;
+  if (error) { showMsg("❌ " + traduireErreur(error.message)); return; }
+  if (data.user && !data.session) {
+    showMsg("✅ Compte créé ! Vérifie tes emails pour confirmer.", "ok");
+  } else {
+    showMsg("✅ Compte créé, connexion…", "ok");
+  }
+});
+
+logoutBtn.addEventListener("click", async () => { await db.auth.signOut(); });
+
+function traduireErreur(msg) {
+  if (/Invalid login credentials/i.test(msg)) return "Email ou mot de passe incorrect.";
+  if (/Email not confirmed/i.test(msg))       return "Confirme ton email avant de te connecter.";
+  if (/User already registered/i.test(msg))   return "Cet email est déjà utilisé.";
+  if (/Password should be/i.test(msg))        return "Mot de passe trop court (6 caractères min).";
+  if (/rate limit/i.test(msg))                return "Trop de tentatives, réessaie plus tard.";
+  return msg;
+}
+
+/* ========== SESSION ========== */
+db.auth.onAuthStateChange((_e, session) => {
+  const user = session?.user ?? null;
+  if (user && user.id !== currentUser?.id) { currentUser = user; enterGame(user); }
+  else if (!user) { currentUser = null; leaveGame(); }
+});
+
+(async () => {
+  const { data: { session } } = await db.auth.getSession();
+  if (session?.user) { currentUser = session.user; enterGame(session.user); }
+})();
+
+function enterGame(user) {
+  authScreen.style.display = "none";
+  gameScreen.style.display = "flex";
+  userBox.style.display    = "flex";
+  userEmail.textContent    = user.email;
+  buildPalette();
+  loadPixels();
+  subscribeRealtime();
+  startCooldownLoop();
+}
+
+function leaveGame() {
+  authScreen.style.display = "block";
+  gameScreen.style.display = "none";
+  userBox.style.display    = "none";
+  if (channel) { db.removeChannel(channel); channel = null; }
+  if (cooldownTimer) { clearInterval(cooldownTimer); cooldownTimer = null; }
+  pixelMap.clear();
+  hover = null;
+  drawAll();
+  authForm.reset();
+  clearMsg();
+  loginBtn.disabled = signupBtn.disabled = false;
+}
+
+/* ========== CHARGEMENT ========== */
+async function loadPixels() {
+  pixelMap.clear();
+  const STEP = 1000;
+  let from = 0;
+  while (true) {
+    const { data, error } = await db.from("pixels").select("x,y,color").range(from, from + STEP - 1);
+    if (error) { console.error(error); break; }
+    for (const p of data) setPixel(p.x, p.y, p.color);
+    if (data.length < STEP) break;
+    from += STEP;
+  }
+  drawAll();
+  pixelCount.textContent = pixelMap.size;
+}
+
+/* ========== REALTIME ========== */
+function subscribeRealtime() {
+  if (channel) db.removeChannel(channel);
+  channel = db.channel("public:pixels")
+    .on("postgres_changes", { event: "*", schema: "public", table: "pixels" }, (payload) => {
+      const p = payload.new;
+      if (!p || p.x == null) return;
+      setPixel(p.x, p.y, p.color);
+      drawAll();
+    })
+    .subscribe();
+}
+
+/* ========== PALETTE ========== */
+function buildPalette() {
+  paletteEl.innerHTML = "";
+  COLORS.forEach((c) => {
+    const sw = document.createElement("div");
+    sw.className = "swatch" + (c === selectedColor ? " active" : "");
+    sw.style.background = c;
+    sw.title = c;
+    sw.addEventListener("click", () => {
+      selectedColor = c;
+      document.querySelectorAll(".swatch").forEach(el => el.classList.remove("active"));
+      sw.classList.add("active");
+    });
+    paletteEl.appendChild(sw);
+  });
+}
+
+/* ========== INTERACTION ========== */
+function canvasCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = Math.floor(((e.clientX - rect.left) * scaleX) / CELL);
+  const y = Math.floor(((e.clientY - rect.top)  * scaleY) / CELL);
+  if (x < 0 || y < 0 || x >= GRID || y >= GRID) return null;
+  return { x, y };
+}
+
+canvas.addEventListener("mousemove", (e) => {
+  const c = canvasCoords(e);
+  const changed = (!!c !== !!hover) || (c && hover && (c.x !== hover.x || c.y !== hover.y));
+  hover = c;
+  posTxt.textContent = c ? `${c.x}, ${c.y}` : "—";
+  if (changed) drawAll();
+});
+canvas.addEventListener("mouseleave", () => { hover = null; posTxt.textContent = "—"; drawAll(); });
+canvas.addEventListener("click", async (e) => {
+  const c = canvasCoords(e);
+  if (!c) return;
+  await placePixel(c.x, c.y);
+});
+
+/* ========== POSER UN PIXEL ========== */
+async function placePixel(x, y) {
+  if (!currentUser) return;
+  const now = Date.now();
+  if (now < cooldownEnd) return;
+
+  setPixel(x, y, selectedColor);
+  drawAll();
+  cooldownEnd = now + COOLDOWN;
+
+  const { error } = await db.from("pixels").upsert(
+    { x, y, color: selectedColor, user_id: currentUser.id, updated_at: new Date().toISOString() },
+    { onConflict: "x,y" }
+  );
+
+  if (error) {
+    console.error(error);
+    cooldownEnd = 0;
+    await loadPixels();
+  }
+}
+
+/* ========== COOLDOWN ========== */
+function startCooldownLoop() {
+  if (cooldownTimer) clearInterval(cooldownTimer);
+  cooldownTimer = setInterval(() => {
+    const remaining = Math.max(0, cooldownEnd - Date.now());
+    const pct = remaining > 0 ? (remaining / COOLDOWN) * 100 : 100;
+    barFill.style.width = (100 - pct) + "%";
+    if (remaining > 0) {
+      cooldownTxt.textContent = `⏳ ${(remaining / 1000).toFixed(1)}s`;
+      canvas.style.cursor = "not-allowed";
+    } else {
+      cooldownTxt.textContent = "✅ Prêt à peindre";
+      canvas.style.cursor = "crosshair";
+    }
+  }, 80);
+}
+
+drawAll();
+</script>
+</body>
+</html>
